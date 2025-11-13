@@ -5,14 +5,30 @@ import * as XLSX from "xlsx";
 export default function Home() {
   const [sheetName, setSheetName] = useState("Sheet1");
   const [grid, setGrid] = useState([[""]]);
+  const [headers, setHeaders] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Load Sheet (fetches headers + rows separately)
   const loadSheet = async () => {
     if (!sheetName.trim()) return alert("Enter a sheet name");
     setLoading(true);
     try {
       const res = await axios.get(`/api/sheet?name=${encodeURIComponent(sheetName)}`);
-      setGrid(res.data.data || [[""]]);
+
+      const { headers = [], entries = [] } = res.data;
+
+      if (!headers.length) {
+        // no existing sheet
+        setGrid([[""]]);
+      } else if (entries.length) {
+        // reconstruct grid (first row headers + rest rows as values)
+        const dataRows = entries.map((e) => headers.map((h) => e.data[h] || ""));
+        setGrid([headers, ...dataRows]);
+      } else {
+        // sheet exists but empty
+        setGrid([headers]);
+      }
+      setHeaders(headers);
     } catch (err) {
       console.error(err);
       alert("Failed to load sheet");
@@ -36,6 +52,8 @@ export default function Home() {
 
   const saveSheet = async () => {
     if (!sheetName.trim()) return alert("Enter a sheet name");
+    if (grid.length < 1) return alert("Grid is empty!");
+
     try {
       await axios.post("/api/sheet", { name: sheetName, data: grid });
       alert(`✅ Saved sheet "${sheetName}"!`);
@@ -65,7 +83,7 @@ export default function Home() {
     }
   };
 
-  // ✅ Import Excel file
+  // ✅ Import Excel file and set grid
   const importFromExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -78,6 +96,7 @@ export default function Home() {
       const worksheet = workbook.Sheets[firstSheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
       setGrid(jsonData.length ? jsonData : [[""]]);
+      if (jsonData.length > 0) setHeaders(jsonData[0]);
     };
     reader.readAsArrayBuffer(file);
   };
@@ -86,7 +105,7 @@ export default function Home() {
 
   return (
     <div style={{ padding: "20px" }}>
-      <h1>Spreadsheet</h1>
+      <h1>Spreadsheet → Form Data</h1>
 
       <div style={{ marginBottom: "10px" }}>
         <label>Sheet Name: </label>
@@ -124,47 +143,56 @@ export default function Home() {
                     value={cell}
                     onChange={(e) => handleChange(r, c, e.target.value)}
                     style={{
-                      width: "100px",
+                      width: "120px",
                       border: "none",
                       outline: "none",
                       textAlign: "center",
-                      background: "transparent",
+                      background: r === 0 ? "#e3f2fd" : "transparent",
+                      fontWeight: r === 0 ? "bold" : "normal",
                     }}
                   />
                 </td>
               ))}
-              <td>
-                <button
-                  onClick={() => deleteRow(r)}
-                  style={{ background: "#ffcccc", border: "1px solid #ff8888", cursor: "pointer" }}
-                >
-                  🗑️ Row
-                </button>
-              </td>
+              {r !== 0 && (
+                <td>
+                  <button
+                    onClick={() => deleteRow(r)}
+                    style={{
+                      background: "#ffcccc",
+                      border: "1px solid #ff8888",
+                      cursor: "pointer",
+                    }}
+                  >
+                    🗑️ Row
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
 
-        <tfoot>
-          <tr>
-            {grid[0]?.map((_, c) => (
-              <td key={c}>
-                <button
-                  onClick={() => deleteColumn(c)}
-                  style={{
-                    background: "#ffcccc",
-                    border: "1px solid #ff8888",
-                    cursor: "pointer",
-                    width: "100%",
-                  }}
-                >
-                  🗑️ Col
-                </button>
-              </td>
-            ))}
-            <td></td>
-          </tr>
-        </tfoot>
+        {grid.length > 0 && (
+          <tfoot>
+            <tr>
+              {grid[0]?.map((_, c) => (
+                <td key={c}>
+                  <button
+                    onClick={() => deleteColumn(c)}
+                    style={{
+                      background: "#ffcccc",
+                      border: "1px solid #ff8888",
+                      cursor: "pointer",
+                      width: "100%",
+                    }}
+                  >
+                    🗑️ Col
+                  </button>
+                </td>
+              ))}
+              <td></td>
+            </tr>
+          </tfoot>
+        )}
       </table>
 
       <div style={{ marginTop: "10px" }}>
